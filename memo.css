@@ -37,13 +37,13 @@
 .memo-header {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 5px;
   margin-bottom: 5px;
-  height: 16px;
+  min-height: 24px;
 }
 
 .memo-header button {
-  width: 16px;
-  height: 16px;
   border: none;
   background: #ddd;
   color: #555;
@@ -51,10 +51,45 @@
   cursor: pointer;
   font-size: 12px;
   line-height: 16px;
-  padding: 0;
-  margin-left: 5px;
+  padding: 4px 6px;
 }
 
 .memo-text {
   padding-top: 5px;
+}
+
+.memo-editor {
+  display: none;
+  width: 100%;
+  min-height: 100px;
+  box-sizing: border-box;
+  margin-top: 5px;
+  padding: 8px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  background: #fffef2;
+}
+
+.memo-editor-actions {
+  display: none;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.memo-editor-actions button {
+  border: none;
+  background: #4285f4;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.memo-editor-actions button:last-child {
+  background: #999;
 }

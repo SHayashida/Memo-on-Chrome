@@ -6,6 +6,33 @@ function updateStorage() {
   chrome.storage.sync.set({ [url]: memosData });
 }
 
+function findMemoIndex(memoId) {
+  return memosData.findIndex((item) => item.id === memoId);
+}
+
+function updateMemoData(memoId, updates) {
+  const memoIndex = findMemoIndex(memoId);
+  if (memoIndex === -1) {
+    return;
+  }
+
+  memosData[memoIndex] = { ...memosData[memoIndex], ...updates };
+  updateStorage();
+}
+
+function clampMemoPosition(container, top, left) {
+  const margin = 8;
+  const maxTop = Math.max(margin, window.innerHeight - container.offsetHeight - margin);
+  const maxLeft = Math.max(margin, window.innerWidth - container.offsetWidth - margin);
+  const clampedTop = Math.min(Math.max(top, margin), maxTop);
+  const clampedLeft = Math.min(Math.max(left, margin), maxLeft);
+
+  return {
+    top: clampedTop,
+    left: clampedLeft
+  };
+}
+
 // メモをレンダリング（表示）する関数
 function renderMemo(memo) {
   // --- DOM要素の作成 ---
@@ -30,38 +57,95 @@ function renderMemo(memo) {
   const collapseBtn = document.createElement('button');
   collapseBtn.textContent = '−';
   collapseBtn.title = '折りたたむ';
+
+  const editBtn = document.createElement('button');
+  editBtn.textContent = '編集';
+  editBtn.title = '編集';
   
   const deleteBtn = document.createElement('button');
   deleteBtn.textContent = '×';
   deleteBtn.title = '削除';
   
   header.appendChild(collapseBtn);
+  header.appendChild(editBtn);
   header.appendChild(deleteBtn);
   
   const text = document.createElement('div');
   text.className = 'memo-text';
   text.textContent = memo.text;
+
+  const editor = document.createElement('textarea');
+  editor.className = 'memo-editor';
+  editor.value = memo.text;
+
+  const editorActions = document.createElement('div');
+  editorActions.className = 'memo-editor-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = '保存';
+  saveBtn.title = '保存';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'キャンセル';
+  cancelBtn.title = 'キャンセル';
+
+  editorActions.appendChild(saveBtn);
+  editorActions.appendChild(cancelBtn);
   
   content.appendChild(header);
   content.appendChild(text);
+  content.appendChild(editor);
+  content.appendChild(editorActions);
   
   container.appendChild(icon);
   container.appendChild(content);
   document.body.appendChild(container);
+
+  const initialPosition = clampMemoPosition(
+    container,
+    parseInt(memo.top, 10) || 10,
+    parseInt(memo.left, 10) || 10
+  );
+  container.style.top = initialPosition.top + 'px';
+  container.style.left = initialPosition.left + 'px';
+
+  if (container.style.top !== memo.top || container.style.left !== memo.left) {
+    memo.top = container.style.top;
+    memo.left = container.style.left;
+    updateMemoData(memo.id, {
+      top: memo.top,
+      left: memo.left
+    });
+  }
+
+  let isEditing = false;
 
   // --- 表示状態の切り替え ---
   function toggleMemoView(isCollapsed) {
     icon.style.display = isCollapsed ? 'flex' : 'none';
     content.style.display = isCollapsed ? 'none' : 'block';
     memo.collapsed = isCollapsed;
-    // collapsed状態をストレージに保存
-    const memoIndex = memosData.findIndex(m => m.id === memo.id);
-    if (memoIndex > -1) {
-      memosData[memoIndex].collapsed = isCollapsed;
-      updateStorage();
+    updateMemoData(memo.id, { collapsed: isCollapsed });
+  }
+
+  function toggleEditMode(nextEditing) {
+    isEditing = nextEditing;
+    text.style.display = nextEditing ? 'none' : 'block';
+    editor.style.display = nextEditing ? 'block' : 'none';
+    editorActions.style.display = nextEditing ? 'flex' : 'none';
+    editBtn.style.display = nextEditing ? 'none' : 'inline-block';
+    collapseBtn.disabled = nextEditing;
+    deleteBtn.disabled = nextEditing;
+
+    if (nextEditing) {
+      editor.value = memo.text;
+      editor.focus();
+      editor.setSelectionRange(editor.value.length, editor.value.length);
     }
   }
+
   toggleMemoView(memo.collapsed);
+  toggleEditMode(false);
 
   // --- イベントリスナー ---
   // アイコンクリックで展開
@@ -74,6 +158,32 @@ function renderMemo(memo) {
   collapseBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleMemoView(true);
+  });
+
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleEditMode(true);
+  });
+
+  saveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const nextText = editor.value.trim();
+
+    if (!nextText) {
+      editor.value = memo.text;
+      return;
+    }
+
+    memo.text = nextText;
+    text.textContent = nextText;
+    updateMemoData(memo.id, { text: nextText });
+    toggleEditMode(false);
+  });
+
+  cancelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editor.value = memo.text;
+    toggleEditMode(false);
   });
 
   // 削除ボタンの処理
@@ -90,6 +200,7 @@ function renderMemo(memo) {
 
   container.addEventListener('mousedown', (e) => {
     // ボタンや展開後のメモ自体をクリックした場合はドラッグを開始しない
+    if (isEditing) return;
     if (e.target !== container && e.target !== icon) return;
     isDragging = true;
     offsetX = e.clientX - container.getBoundingClientRect().left;
@@ -99,8 +210,13 @@ function renderMemo(memo) {
 
   document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
-    container.style.left = e.clientX - offsetX + 'px';
-    container.style.top = e.clientY - offsetY + 'px';
+    const nextPosition = clampMemoPosition(
+      container,
+      e.clientY - offsetY,
+      e.clientX - offsetX
+    );
+    container.style.left = nextPosition.left + 'px';
+    container.style.top = nextPosition.top + 'px';
   });
 
   document.addEventListener('mouseup', () => {
@@ -109,12 +225,12 @@ function renderMemo(memo) {
     container.style.cursor = 'grab';
     
     // 位置を更新してストレージに保存
-    const memoIndex = memosData.findIndex(m => m.id === memo.id);
-    if (memoIndex > -1) {
-      memosData[memoIndex].top = container.style.top;
-      memosData[memoIndex].left = container.style.left;
-      updateStorage();
-    }
+    memo.top = container.style.top;
+    memo.left = container.style.left;
+    updateMemoData(memo.id, {
+      top: memo.top,
+      left: memo.left
+    });
   });
 }
 
