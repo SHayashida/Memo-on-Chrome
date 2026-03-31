@@ -5,6 +5,31 @@ async function getCurrentTab() {
   return tab;
 }
 
+function canInjectIntoTab(tab) {
+  return tab?.id && tab?.url && /^https?:/.test(tab.url);
+}
+
+async function ensureContentScriptReady(tabId) {
+  await chrome.scripting.insertCSS({
+    target: { tabId },
+    files: ['memo.css']
+  });
+
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ['content_script.js']
+  });
+}
+
+async function sendAddMemoMessage(tab, newMemo) {
+  if (!canInjectIntoTab(tab)) {
+    throw new Error('This tab does not allow memo injection.');
+  }
+
+  await ensureContentScriptReady(tab.id);
+  await chrome.tabs.sendMessage(tab.id, { action: 'add_memo', data: newMemo });
+}
+
 // ポップアップが読み込まれたときの処理
 document.addEventListener('DOMContentLoaded', () => {
   const memoText = document.getElementById('memo-text');
@@ -33,10 +58,14 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.sync.get([url], (result) => {
       const memos = result[url] || [];
       memos.push(newMemo);
-      chrome.storage.sync.set({ [url]: memos }, () => {
+      chrome.storage.sync.set({ [url]: memos }, async () => {
         console.log('New memo added for ' + url);
         // content_scriptにメッセージを送信して新しいメモを即時表示
-        chrome.tabs.sendMessage(tab.id, { action: "add_memo", data: newMemo });
+        try {
+          await sendAddMemoMessage(tab, newMemo);
+        } catch (error) {
+          console.error('Failed to render memo immediately:', error);
+        }
         window.close(); // ポップアップを閉じる
       });
     });
